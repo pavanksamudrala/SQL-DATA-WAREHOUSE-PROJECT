@@ -1,3 +1,23 @@
+/*
+====================================================================
+Stored Procedure: silver.load_silver
+Description:
+This procedure is responsible for transforming and loading curated data
+into the Silver layer from the Bronze layer. It performs a full refresh of
+all silver tables by truncating existing data and reloading clean,
+standardized, and business-friendly records.
+
+Key points:
+1. Cleans and standardizes customer, product, sales, and ERP data.
+2. Removes duplicate records using latest record logic where needed.
+3. Converts raw codes and statuses into readable business values.
+4. Derives missing or invalid values such as sales/price, product end dates,
+   and country names.
+5. Tracks execution time for each table load and the entire batch.
+6. Uses TRY/CATCH to capture errors and log them during the pipeline run.
+====================================================================
+*/
+
 CREATE OR ALTER PROCEDURE silver.load_silver AS
 BEGIN
  DECLARE @StartTime DATETIME , @EndTime DATETIME, @batch_start_time DATETIME, @batch_end_time DATETIME
@@ -11,6 +31,11 @@ BEGIN
      PRINT ' Loading CRM Tables ';
      PRINT '----------------------';
 
+    /*
+    CRM customer table:
+    - Keeps only the latest record per customer based on create date.
+    - Standardizes casing and marital/gender status values.
+    */
     SET @StartTime = GETDATE();
     PRINT '>> Truncating Table : silver.crm_cust_info';
     TRUNCATE TABLE silver.crm_cust_info
@@ -52,6 +77,12 @@ BEGIN
         PRINT '>> Load Duration: ' + CAST(DATEDIFF(Second, @StartTime, @EndTime) AS NVARCHAR)+ 'Seconds';
         PRINT '-----------------------------';
 
+    /*
+    CRM product table:
+    - Normalizes product category and line values.
+    - Computes product lifecycle end date using next effective date.
+    - Replaces null costs with zero.
+    */
     SET @StartTime = GETDATE();
     PRINT '>> Truncating Table : silver.crm_prd_info';
     TRUNCATE TABLE silver.crm_prd_info
@@ -91,6 +122,12 @@ BEGIN
         PRINT '>> Load Duration: ' + CAST(DATEDIFF(Second, @StartTime, @EndTime) AS NVARCHAR)+ 'Seconds';
         PRINT '-----------------------------';
 
+    /*
+    CRM sales detail table:
+    - Converts date fields from raw numeric strings to proper DATE values.
+    - Recalculates sales amount when source values are null or inconsistent.
+    - Derives price when invalid or missing.
+    */
     SET @StartTime = GETDATE();
     PRINT '>> Truncating Table : silver.crm_sales_details';
     TRUNCATE TABLE silver.crm_sales_details
@@ -138,6 +175,11 @@ BEGIN
         PRINT '>> Load Duration: ' + CAST(DATEDIFF(Second, @StartTime, @EndTime) AS NVARCHAR)+ 'Seconds';
         PRINT '-----------------------------';
 
+    /*
+    ERP customer table:
+    - Cleans customer IDs and gender values.
+    - Filters future dates to null and standardizes male/female values.
+    */
     SET @StartTime = GETDATE();
     PRINT '>> Truncating Table : silver.erp_cust_az12';
     TRUNCATE TABLE silver.erp_cust_az12
@@ -164,6 +206,11 @@ BEGIN
         PRINT '>> Load Duration: ' + CAST(DATEDIFF(Second, @StartTime, @EndTime) AS NVARCHAR)+ 'Seconds';
         PRINT '-----------------------------';
 
+    /*
+    ERP location table:
+    - Removes hyphen separators from IDs.
+    - Standardizes country codes to readable names.
+    */
     SET @StartTime = GETDATE();
     PRINT '>> Truncating Table : silver.erp_loc_a101';
     TRUNCATE TABLE silver.erp_loc_a101
@@ -186,6 +233,10 @@ BEGIN
         PRINT '-----------------------------';
 
 
+    /*
+    ERP product category table:
+    - Loads reference data without transformation.
+    */
     SET @StartTime = GETDATE();
     PRINT '>> Truncating Table : silver.erp_px_cat_g1v2';
     TRUNCATE TABLE silver.erp_px_cat_g1v2
