@@ -1,32 +1,95 @@
-CREATE OR ALTER VIEW gold.dim_customers as
+/*
+================================================================================================================
+GOLD LAYER VIEWS
+================================================================================================================
+This script creates the business-ready views in the GOLD layer of the data warehouse.
+The GOLD layer is designed for reporting and analytics. It contains curated,
+clean, and denormalized views that are easier for BI tools and end users to query
+than the raw source tables in the silver layer.
+
+VIEW USAGE:
+- Views are reusable virtual tables that expose curated data without storing it again.
+- They help abstract transformation logic and keep reporting queries simple.
+- They improve maintainability because business logic is defined once and reused.
+- They support analytical reporting by giving a clean star-schema-style structure.
+- They allow downstream tools like Power BI, Tableau, and SQL reports to read
+  reliable, business-friendly data.
+
+In this script:
+- dim_customers: customer dimension for customer-level analysis
+- dim_products: product dimension for product/category analysis
+- fact_sales: sales fact table for revenue and order analysis
+================================================================================================================
+*/
+
+/*
+================================================================================================================
+View: gold.dim_customers
+Description:
+The customer dimension provides a cleaned and unified customer profile for reporting.
+It combines customer details from CRM data, ERP demographic data, and location data.
+This view is used to segment customers by geography, gender, date of creation, and marital status.
+
+Business Usage:
+- Customer segmentation and profiling
+- Sales analysis by customer type and region
+- Demographic analysis for campaigns and insights
+- Customer-level KPI reporting
+
+View comments:
+- A view is a saved SQL query that acts like a table.
+- It does not physically duplicate data, but it gives a stable logical table for reports.
+- This is useful in a warehouse because transformations can be centralized and reused.
+================================================================================================================
+*/
+CREATE OR ALTER VIEW gold.dim_customers AS
 SELECT
      ROW_NUMBER() OVER(ORDER BY cst_id) customer_key,
      ci.cst_id customer_id,
      ci.cst_key customer_number,
      ci.cst_firstname first_name,
      ci.cst_lastname last_name,
-      cc.cntry country,
-      ci.cst_marital_status marital_status,
+     cc.cntry country,
+     ci.cst_marital_status marital_status,
      CASE WHEN ci.cst_gndr != 'N/A' THEN ci.cst_gndr
        ELSE COALESCE(eci.gen, 'N/A')
      END gender,
-      eci.bdate birth_date,
-     ci.cst_create_date create_date   
+     eci.bdate birth_date,
+     ci.cst_create_date create_date
 FROM silver.crm_cust_info ci
 LEFT JOIN silver.erp_cust_az12 eci
 ON ci.cst_key = eci.cid
 LEFT JOIN silver.erp_loc_a101 cc
-ON cc.cid = ci.cst_key
------------------------------------------------------------------------
-CREATE OR ALTER VIEW gold.dim_products
-AS 
+ON cc.cid = ci.cst_key;
+
+/*
+================================================================================================================
+View: gold.dim_products
+Description:
+The product dimension provides a clean catalog of active products and their category details.
+It combines product master data with product category metadata to support product-based analytics.
+Only products that are currently active are included.
+
+Business Usage:
+- Product performance analysis
+- Category and subcategory reporting
+- Product line profitability analysis
+- Inventory and sales trend analysis
+
+View comments:
+- Views simplify downstream reporting by exposing a logical table with final transformed columns.
+- They support analytics users without requiring them to understand underlying source joins.
+- This improves consistency because all reports pull from the same curated output.
+================================================================================================================
+*/
+CREATE OR ALTER VIEW gold.dim_products AS
 SELECT 
       ROW_NUMBER() OVER(ORDER BY p.prd_start_dt,p.prd_key) product_key,
       p.prd_id poduct_id,
       p.prd_key product_number,
       p.prd_nm product_name,
       p.cat_id category_id,
-         sc.cat category_name,
+      sc.cat category_name,
       sc.subcat subcategory_name,
       sc.maintenance maintenance,
       p.prd_cost product_cost,
@@ -35,9 +98,29 @@ SELECT
 FROM silver.crm_prd_info p
 LEFT JOIN silver.erp_px_cat_g1v2 sc
 ON p.cat_id = sc.id
-WHERE p.prd_end_dt IS NULL
-----------------------------------------------------------------------------
-        CREATE OR ALTER VIEW gold.fact_sales AS
+WHERE p.prd_end_dt IS NULL;
+
+/*
+================================================================================================================
+View: gold.fact_sales
+Description:
+The sales fact view stores transactional sales records for business reporting.
+It joins sales transactions to the product and customer dimensions to provide a star-schema-like model.
+Each row represents an order-level sales fact, enabling aggregated analysis across product and customer dimensions.
+
+Business Usage:
+- Revenue and sales trend analysis
+- Order quantity analysis
+- Customer and product-level performance analysis
+- KPI dashboards and executive reporting
+
+View comments:
+- Fact tables store measurable events; dimensions store descriptive attributes.
+- Views allow fact tables to remain accessible and reusable without duplicating data.
+- Reporting tools can query gold.fact_sales directly and join to dimensions for drill-down.
+================================================================================================================
+*/
+CREATE OR ALTER VIEW gold.fact_sales AS
 SELECT 
 sl.sls_ord_num order_number,
 pr.product_key,
@@ -52,4 +135,4 @@ FROM silver.crm_sales_details sl
 LEFT JOIN gold.dim_products pr
 ON sl.sls_prd_key = pr.product_number
 LEFT JOIN gold.dim_customers cu
-ON sl.sls_cust_id = cu.customer_id
+ON sl.sls_cust_id = cu.customer_id;
